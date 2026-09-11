@@ -9,6 +9,7 @@ from fastapi.responses import StreamingResponse
 from . import db, scoring
 from .auth import CurrentSession, authenticate, get_current_session
 from .config import IMPOSSIBLE_TRAVEL_WINDOW_SECONDS
+from .narration import narrate_admin, narrate_decision, narrate_kill, narrate_posture
 from .models import (
     AccessRequest,
     AccessResponse,
@@ -81,6 +82,7 @@ def posture(body: PostureSignal, session: CurrentSession = Depends(get_current_s
         body.local_time, body.timestamp, posture_score,
     )
     db.touch_session(session.jti, body.geo, body.client_ip)
+    narrate_posture(body.device_id, posture_score, body.firewall_status, body.open_ports)
     return PostureResponse(posture_score_component=posture_score)
 
 
@@ -117,10 +119,14 @@ def permission_request(body: PermissionRequest, session: CurrentSession = Depend
         pending_admin_action=pending_admin_action,
     )
 
+    narrate_decision(decision, body.app_id, ",".join(body.requested_permissions), score, reason)
+
     if decision == "CRITICAL":
         # manifest violation: kill the offending app/device immediately,
         # regardless of manual/auto mode, and surface it in the event log.
-        db.kill_target(dp.device_id, f"CRITICAL manifest violation: {reason}")
+        kill_reason = f"CRITICAL manifest violation: {reason}"
+        db.kill_target(dp.device_id, kill_reason)
+        narrate_kill(dp.device_id, kill_reason)
 
     db.touch_session(session.jti, dp.geo, dp.client_ip, trust_score=score)
 
@@ -158,6 +164,7 @@ def access_request(body: AccessRequest, session: CurrentSession = Depends(get_cu
     )
 
     db.touch_session(session.jti, body.geo or row["last_geo"], body.client_ip, trust_score=score)
+    narrate_decision(decision, session.username, body.resource, score, reason)
 
     return AccessResponse(decision=decision, score=score, reason=reason, event_id=event_id)
 
@@ -171,6 +178,7 @@ def admin_decision(body: AdminDecisionRequest, session: CurrentSession = Depends
     if event is None:
         raise HTTPException(404, "unknown event_id")
     db.resolve_event(body.event_id, body.admin_decision)
+    narrate_admin(body.event_id, body.admin_decision)
     return AdminDecisionResponse(status="ok")
 
 
@@ -182,6 +190,7 @@ def kill_switch(body: KillSwitchRequest, session: CurrentSession = Depends(get_c
         f"admin kill switch triggered: {body.reason}", mode="manual",
         timestamp=str(int(time.time())),
     )
+    narrate_kill(body.target, body.reason)
     return KillSwitchResponse(status="killed", event_id=event_id)
 
 

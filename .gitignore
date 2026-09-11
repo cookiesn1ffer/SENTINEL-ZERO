@@ -6,3 +6,5 @@ __pycache__/
 .mode_state.json
 .agents/
 .claude/
+.sentinel-pids
+.sentinel-logs/
