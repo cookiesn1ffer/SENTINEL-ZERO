@@ -3,7 +3,10 @@ from typing import List, Tuple
 from .manifests import MANIFESTS
 
 # Ports that are expected/benign on a normal workstation posture check.
-TRUSTED_PORTS = {80, 443}
+# 8000 is Sentinel Zero's own control-plane port: when the agent and server
+# run on the same demo laptop, the server's own listening socket shouldn't
+# itself count against that laptop's posture.
+TRUSTED_PORTS = {80, 443, 8000}
 
 RISK_TIER_BASE_SCORE = {"low": 90, "medium": 78, "high": 62}
 
